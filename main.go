@@ -20,13 +20,12 @@ import (
 	"github.com/disintegration/imaging"
 )
 
-var (
-	sess        = session.Must(session.NewSession())
-	uploader    = s3manager.NewUploader(sess)
-	downloader  = s3manager.NewDownloader(sess)
-	pathRegex   = regexp.MustCompile(`(designs|products)/(\d+)/`)
-	errorLogger = log.New(os.Stderr, "ERROR ", log.Llongfile)
-)
+var sess = session.Must(session.NewSession())
+var uploader = s3manager.NewUploader(sess)
+var downloader = s3manager.NewDownloader(sess)
+var errorLogger = log.New(os.Stderr, "ERROR ", log.Llongfile)
+
+var pathRegex = regexp.MustCompile(`(designs|products)/(\d+)/`)
 
 type Transform struct {
 	Size        int
@@ -65,7 +64,7 @@ func handle(ctx context.Context, req events.S3Event) (string, error) {
 }
 
 func processFile(bucket, key string) {
-	log.Printf("Processing %s in bucket %s\n", bucket, key)
+	log.Printf("Processing \"%s\" in bucket \"%s\"\n", key, bucket)
 
 	matches := pathRegex.FindStringSubmatch(key)
 	if len(matches) == 0 {
@@ -74,9 +73,11 @@ func processFile(bucket, key string) {
 	model := matches[1]
 	id := matches[2]
 
-	var f *aws.WriteAtBuffer
+	log.Printf("model: \"%s\", id: \"%s\"\n", model, id)
 
-	_, err := downloader.Download(f, &s3.GetObjectInput{
+	buf := &aws.WriteAtBuffer{}
+
+	_, err := downloader.Download(buf, &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
@@ -84,7 +85,7 @@ func processFile(bucket, key string) {
 		log.Fatal(err)
 	}
 
-	img, err := imaging.Decode(bytes.NewReader(f.Bytes()))
+	img, err := imaging.Decode(bytes.NewReader(buf.Bytes()))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -129,7 +130,7 @@ func transformImage(img image.Image, transform Transform, bgColor color.Color) i
 		resizeWidth = 0
 	}
 
-	dstImage := imaging.Resize(img, resizeWidth, resizeHeight, imaging.CatmullRom)
+	dstImage := imaging.Resize(img, resizeWidth, resizeHeight, imaging.Lanczos)
 	dstImage = imaging.Sharpen(dstImage, .5)
 
 	// Create a new solid color image
